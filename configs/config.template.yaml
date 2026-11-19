@@ -1,0 +1,86 @@
+# MoDy Analyse v1.0.0 — Global Portable Project Configuration Template
+# Works out of the box for ANY 1-component, binary DES, or N-component solvent + 0..M solutes.
+
+project_root: "./data/runs"
+workflow_root: "."
+results_dir: "./results"
+run_glob: "*"
+
+# Optional molecule classification & site overrides.
+# Leave `solvents: []` for automatic majority/minority detection from topol.top & metadata.json,
+# or list explicit solvent residue names here. Missing physicochemical fields auto-derive via RDKit/.itp.
+system:
+  solvents: []
+  primary_solvent: null
+  solutes: []
+  pure_system_code: "PURE"
+  species_properties: {}
+  # Example override:
+  # species_properties:
+  #   CHCL:
+  #     density_gcm3: 1.05
+  #     rh_nm: 0.34
+  #     polar_atoms: ["N1", "O1"]
+
+# Optional relative path hints for non-SolvForge / custom GROMACS directory layouts
+paths:
+  topol_relpath: "00_input/topol.top"
+  tpr_relpath: "04_prod/prod.tpr"
+  xtc_relpath: "04_prod/prod.xtc"
+  thermo_relpath: "analysis/thermo.xvg"
+  stress_relpath: "analysis/stress.xvg"
+  rdf_dir_relpath: "analysis/rdf"
+
+# Optional external benchmark CSV (COSMO-RS, experimental solubility, etc.); leave csv_path: null to skip.
+benchmark:
+  csv_path: null
+  format: "generic"
+  filters: {}
+  system_col: "system_code"
+  value_col: "ln_gamma_inf"
+  capacity_col: "capacity_c"
+
+binaries:
+  conda_env: "mody-analyse"
+  orca_bin: "orca"
+  orca_2mkl_bin: "orca_2mkl"
+  openmpi_dir: null
+  xtb_bin: "xtb"
+  multiwfn_bin: "Multiwfn_noGUI"
+  vmd_bin: "vmd"
+
+compute:
+  orca_nprocs: 4
+  orca_maxcore_mb: 1500
+  led_nprocs: 4
+  led_maxcore_mb: 2500
+  led_ram_limit_gb: 28.0
+  xtb_workers: 6
+
+md:
+  temperature_k: 323.15
+  t_eq_ns: 100.0
+  t_end_ns: 500.0
+  kbi_rebin_nm: 0.02
+  kbi_rmax_nm: 2.4
+  kbi_plateau_range_nm: [1.4, 2.0]
+  hbond_dist_nm: 0.35
+  hbond_angle_deg: 150.0
+  hbond_angle_sensitivity_deg: 135.0
+  rdf_stride: 5
+  hbond_stride: 1
+  network_stride: 10
+  sdf_stride: 10
+  sdf_grid_spacing_a: 0.5
+  sdf_half_width_a: 10.0
+
+qm_sampling:
+  strain_snapshots_per_rep: 30
+  strain_ref_conformers: 50
+  dimers_per_pair_per_rep: 30
+  trimers_per_system_per_rep: 15
+  dft_dimers_per_pair: 3
+  cp_validation_dimers_per_pair: 1
+  dft_trimers_per_solute: 4
+  nci_clusters_total: 9
+  led_dimers_total: 6

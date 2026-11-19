@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SolvForge Run Metadata for MoDy Analyse",
+  "type": "object",
+  "required": ["systemKind", "replica"],
+  "properties": {
+    "runId": { "type": "string" },
+    "systemKind": {
+      "type": "string",
+      "enum": ["pure-des", "solute-loaded", "binary", "ternary", "custom"]
+    },
+    "soluteAbbreviation": {
+      "type": ["string", "null"],
+      "description": "Short system code (e.g. GA, IBU) for non-pure runs"
+    },
+    "replica": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "temperatureK": { "type": "number" },
+    "pressureBar": { "type": "number" }
+  },
+  "additionalProperties": true
+}

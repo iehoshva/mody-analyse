@@ -1,0 +1,36 @@
+# Runtime outputs & local run data
+results/
+results_pilot/
+runs/
+configs/local*.yaml
+
+# Third-party proprietary / non-redistributable binaries
+tools/*
+!tools/README.md
+
+# Quantum chemistry scratch & heavy wavefunction files
+*.gbw
+*.tmp*
+*.chk
+*.wfn
+*.cub
+orca_jobs/
+xtb_jobs/
+nci_jobs/
+clusters/
+
+# Molecular dynamics trajectories
+*.xtc
+*.trr
+*.edr
+*.cpt
+
+# Python & IDE caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+dist/
+build/
+.venv/
+.env

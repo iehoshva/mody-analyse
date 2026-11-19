@@ -1,0 +1,97 @@
+# Reference Preset: Andaliman Thesis MD/KBI/GK/QM (Thymol:1-Dodecanol 5:1 at 323.15 K)
+# Explicit physicochemical parameters provided cleanly in YAML rather than hardcoded in Python.
+
+project_root: "./data/andaliman_runs"
+workflow_root: "."
+cosmors_csv: "./data/top_5_DES_selectivity.csv"
+results_dir: "./results_andaliman"
+run_glob: "AND_STAGE-A_*THY-DOD*"
+
+system:
+  solvents: ["THY", "DOD"]
+  primary_solvent: "THY"
+  solutes: ["GAC", "GER", "LIM"]
+  pure_system_code: "PURE"
+  species_properties:
+    THY:
+      density_gcm3: 0.950398
+      rh_nm: 0.35
+      polar_atoms: ["O1"]
+      polar_h_atoms: ["H14"]
+      ring_atoms: ["C2", "C5", "C6", "C7", "C8", "C9"]
+      align_atoms: ["C5", "O1", "C8"]
+      sol_axis_index: 0
+    DOD:
+      density_gcm3: 0.81255
+      rh_nm: 0.42
+      polar_atoms: ["O1"]
+      polar_h_atoms: ["H26"]
+      tail_atoms: ["C12"]
+      align_atoms: ["C11", "O1", "C9"]
+      sol_axis_index: 0
+    GAC:
+      rh_nm: 0.41
+      polar_atoms: ["O1", "O2"]
+      ring_atoms: ["C1", "C2", "C5", "C6", "C7", "C8"]
+      align_atoms: ["C11", "O2", "O1"]
+      sol_axis_index: 0
+    GER:
+      rh_nm: 0.39
+      polar_atoms: ["O1"]
+      ring_atoms: ["C1", "C2", "C5", "C6", "C7", "C8"]
+      align_atoms: ["O1", "C10", "C7"]
+      sol_axis_index: 0
+    LIM:
+      rh_nm: 0.37
+      polar_atoms: ["C5", "C6"]
+      ring_atoms: ["C1", "C2", "C5", "C6", "C7", "C8"]
+      align_atoms: ["C1", "C2", "C5"]
+      sol_axis_index: 2
+
+benchmark:
+  format: "andaliman_cosmors"
+
+binaries:
+  conda_env: "mody-analyse"
+  orca_bin: "orca"
+  orca_2mkl_bin: "orca_2mkl"
+  openmpi_dir: null
+  xtb_bin: "xtb"
+  multiwfn_bin: "Multiwfn_noGUI"
+  vmd_bin: "vmd"
+
+compute:
+  orca_nprocs: 4
+  orca_maxcore_mb: 1500
+  led_nprocs: 4
+  led_maxcore_mb: 2500
+  led_ram_limit_gb: 28.0
+  xtb_workers: 6
+
+md:
+  temperature_k: 323.15
+  t_eq_ns: 100.0
+  t_end_ns: 500.0
+  kbi_rebin_nm: 0.02
+  kbi_rmax_nm: 2.4
+  kbi_plateau_range_nm: [1.4, 2.0]
+  hbond_dist_nm: 0.35
+  hbond_angle_deg: 150.0
+  hbond_angle_sensitivity_deg: 135.0
+  rdf_stride: 5
+  hbond_stride: 1
+  network_stride: 10
+  sdf_stride: 10
+  sdf_grid_spacing_a: 0.5
+  sdf_half_width_a: 10.0
+
+qm_sampling:
+  strain_snapshots_per_rep: 30
+  strain_ref_conformers: 50
+  dimers_per_pair_per_rep: 30
+  trimers_per_system_per_rep: 15
+  dft_dimers_per_pair: 3
+  cp_validation_dimers_per_pair: 1
+  dft_trimers_per_solute: 4
+  nci_clusters_total: 9
+  led_dimers_total: 6

@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+title: "MoDy Analyse: Modular MD-KBI-Green-Kubo and MD-to-QM Workflow Engine"
+message: "If you use MoDy Analyse in academic research, please cite this repository alongside SolvForge MD."
+type: software
+authors:
+  - family-names: Wyldanta
+    given-names: Yehosyua Widiatmo
+version: "1.0.0"
+license: GPL-3.0-only
+url: "https://github.com/iehoshva/solvforge-md"

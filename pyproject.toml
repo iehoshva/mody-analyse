@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mody-analyse"
+version = "1.0.0"
+description = "Modular MD-KBI-Green-Kubo and MD-to-QM (GFN2-xTB / ORCA LED / Multiwfn NCI-IGMH) computational chemistry workflow engine."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "GPL-3.0-only" }
+authors = [
+  { name = "Yehosyua Widiatmo Wyldanta" }
+]
+keywords = [
+  "molecular-dynamics",
+  "gromacs",
+  "kirkwood-buff",
+  "green-kubo",
+  "deep-eutectic-solvents",
+  "quantum-chemistry",
+  "orca",
+  "xtb",
+  "multiwfn",
+]
+dependencies = [
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "pandas>=2.1",
+  "matplotlib>=3.8",
+  "seaborn>=0.13",
+  "networkx>=3.2",
+  "MDAnalysis>=2.7",
+  "rdkit>=2024.3",
+  "pyyaml>=6.0",
+  "tidynamics>=1.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+mody-analyse = "mody_analyse.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+pythonpath = ["src"]

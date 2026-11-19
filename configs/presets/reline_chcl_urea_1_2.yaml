@@ -1,0 +1,63 @@
+# Example Preset: Choline Chloride : Urea (1:2 Reline DES) + Hydrophilic/Pharmaceutical Solutes
+# Demonstrates global adaptability with zero Python code modifications.
+
+project_root: "./data/reline_runs"
+workflow_root: "."
+results_dir: "./results_reline"
+run_glob: "RELINE_*"
+
+system:
+  solvents: ["CHCL", "URE"]
+  primary_solvent: "URE"
+  solutes: ["IBU", "CAF"]
+  pure_system_code: "PURE"
+  species_properties: {} # Everything else auto-inferred via .itp + RDKit!
+
+benchmark:
+  csv_path: null
+  format: "generic"
+
+binaries:
+  conda_env: "mody-analyse"
+  orca_bin: "orca"
+  orca_2mkl_bin: "orca_2mkl"
+  openmpi_dir: null
+  xtb_bin: "xtb"
+  multiwfn_bin: "Multiwfn_noGUI"
+  vmd_bin: "vmd"
+
+compute:
+  orca_nprocs: 4
+  orca_maxcore_mb: 1500
+  led_nprocs: 4
+  led_maxcore_mb: 2500
+  led_ram_limit_gb: 28.0
+  xtb_workers: 6
+
+md:
+  temperature_k: 333.15
+  t_eq_ns: 20.0
+  t_end_ns: 100.0
+  kbi_rebin_nm: 0.02
+  kbi_rmax_nm: 2.0
+  kbi_plateau_range_nm: [1.2, 1.8]
+  hbond_dist_nm: 0.35
+  hbond_angle_deg: 150.0
+  hbond_angle_sensitivity_deg: 135.0
+  rdf_stride: 5
+  hbond_stride: 1
+  network_stride: 10
+  sdf_stride: 10
+  sdf_grid_spacing_a: 0.5
+  sdf_half_width_a: 10.0
+
+qm_sampling:
+  strain_snapshots_per_rep: 20
+  strain_ref_conformers: 30
+  dimers_per_pair_per_rep: 20
+  trimers_per_system_per_rep: 12
+  dft_dimers_per_pair: 2
+  cp_validation_dimers_per_pair: 1
+  dft_trimers_per_solute: 2
+  nci_clusters_total: 6
+  led_dimers_total: 4
