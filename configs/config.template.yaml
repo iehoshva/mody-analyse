@@ -84,3 +84,20 @@ qm_sampling:
   dft_trimers_per_solute: 4
   nci_clusters_total: 9
   led_dimers_total: 6
+
+# Modular Analysis Selector & Physics Gatekeeper options
+# Profiles: standard | quick_qc | full_kbi_thermo | electrolyte_des | spectroscopy | interface_slab | conformation_free_energy | md_only_everything | everything
+analyses:
+  profile: "standard"
+  enabled: []
+  disabled: []
+  options:
+    n_blocks: 5
+    subvolume_n_spheres: 48
+    q_max_inv_nm: 25.0
+    gas_energies_kj_mol: {}
+    vdos_max_dt_ps: 0.05
+    sasa_probe_nm: 0.14
+    sasa_n_points: 92
+    voronoi_stride: 10
+    force_slab: false

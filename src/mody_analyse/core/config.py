@@ -58,6 +58,7 @@ class Config:
     species_properties: dict[str, dict[str, Any]] = field(default_factory=dict)
     benchmark: dict[str, Any] = field(default_factory=dict)
     paths: dict[str, str] = field(default_factory=dict)
+    analyses: dict[str, Any] = field(default_factory=dict)
 
     def raw_dict(self) -> dict[str, Any]:
         return {k: str(v) if isinstance(v, Path) else v for k, v in self.__dict__.items()}
@@ -88,6 +89,7 @@ def load_config(path: str | Path) -> Config:
     sys_sec = raw.get("system") or {}
     bench_sec = raw.get("benchmark") or {}
     paths_sec = raw.get("paths") or {}
+    analyses_sec = raw.get("analyses") or {}
 
     ompi_raw = b.get("openmpi_dir")
     cosmors_raw = raw.get("cosmors_csv", bench_sec.get("csv_path"))
@@ -149,4 +151,5 @@ def load_config(path: str | Path) -> Config:
         species_properties={str(k): dict(v or {}) for k, v in (sys_sec.get("species_properties") or {}).items()},
         benchmark=dict(bench_sec),
         paths={str(k): str(v) for k, v in paths_sec.items()},
+        analyses=dict(analyses_sec),
     )

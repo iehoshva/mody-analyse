@@ -362,6 +362,16 @@ def read_xvg(path: Path, max_rows: int | None = None) -> tuple[list[str], np.nda
     return cols, arr
 
 
+def read_xvg_dataframe(path: Path, max_rows: int | None = None) -> pd.DataFrame:
+    """Read an XVG file into a pandas DataFrame using legend column names."""
+    import pandas as pd
+
+    cols, arr = read_xvg(path, max_rows=max_rows)
+    if arr.size == 0:
+        return pd.DataFrame(columns=cols)
+    return pd.DataFrame(arr, columns=cols[: arr.shape[1]])
+
+
 def _find_first_existing(run_dir: Path, candidates: list[str]) -> Path | None:
     for rel in candidates:
         if not rel:
