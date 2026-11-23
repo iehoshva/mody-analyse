@@ -12,6 +12,13 @@ from sklearn.decomposition import PCA
 
 from mody_analyse.core.config import Config
 from mody_analyse.core.discovery import MoleculeTopology, RunRecord, compute_whole_coms_vectorized, equilibrated_frame_slice
+from mody_analyse.core.pbc import (
+    box_matrix_from_dimensions,
+    box_volume_nm3,
+    dimensions_angstrom_to_box_nm,
+    minimum_image_displacement,
+    wrap_positions,
+)
 
 R_KCAL_MOL_K = 1.98720425864083e-3
 R_KJ_MOL_K = 8.314462618e-3
@@ -272,9 +279,10 @@ def compute_periodic_voronoi(
     box_nm: box edge lengths (3,) in nm.
     """
     pts = np.asarray(points_nm, dtype=float)
-    L = np.asarray(box_nm[:3], dtype=float)
+    box_arr = np.asarray(box_nm, dtype=float)
     n_pts = len(pts)
-    if n_pts < 4 or np.any(L <= 0):
+    vol_box = box_volume_nm3(box_arr) if n_pts >= 4 else 0.0
+    if n_pts < 4 or vol_box <= 1e-12:
         return {
             "mean_voronoi_vol_nm3": float("nan"),
             "std_voronoi_vol_nm3": float("nan"),
@@ -286,13 +294,14 @@ def compute_periodic_voronoi(
             "cell_volumes_nm3": np.array([]),
         }
 
-    pts_w = np.mod(pts, L[None, :])
-    # Build 3x3x3 periodic tiled images (index 0..n_pts-1 is the central unit cell)
+    H = box_matrix_from_dimensions(box_arr)
+    pts_w = wrap_positions(pts, box_arr)
+    # Build 3x3x3 periodic tiled images using general lattice vectors H (orthorhombic or triclinic)
     shifts = np.array([[ix, iy, iz] for ix in (-1, 0, 1) for iy in (-1, 0, 1) for iz in (-1, 0, 1)], dtype=float)
-    # Put (0,0,0) first so indices [0:n_pts] correspond to the original central particles
     zero_idx = int(np.where((shifts == 0).all(axis=1))[0][0])
     shifts[[0, zero_idx]] = shifts[[zero_idx, 0]]
-    tiled = np.vstack([pts_w + s * L[None, :] for s in shifts])
+    shift_vecs = shifts @ H  # (27, 3)
+    tiled = np.vstack([pts_w + sv[None, :] for sv in shift_vecs])
 
     vor = Voronoi(tiled)
     volumes: list[float] = []
@@ -322,26 +331,23 @@ def compute_periodic_voronoi(
         except Exception:
             continue
 
-    # Grid-probed free volume & cavity radius distribution
+    # Grid-probed free volume & cavity radius distribution (uniform in fractional unit-cell coordinates)
     gn = max(8, int(grid_n))
-    gx = (np.arange(gn) + 0.5) / gn * L[0]
-    gy = (np.arange(gn) + 0.5) / gn * L[1]
-    gz = (np.arange(gn) + 0.5) / gn * L[2]
-    grid = np.stack(np.meshgrid(gx, gy, gz, indexing="ij"), axis=-1).reshape(-1, 3)  # (G, 3)
+    f1d = (np.arange(gn) + 0.5) / gn
+    fgrid = np.stack(np.meshgrid(f1d, f1d, f1d, indexing="ij"), axis=-1).reshape(-1, 3)
+    grid = fgrid @ H  # (G, 3)
 
     if vdw_radii_nm is None:
-        # Effective molecular radius from density if atom radii not provided
-        r_eff = np.full(n_pts, 0.35 * ((L[0] * L[1] * L[2] / n_pts) ** (1.0 / 3.0)), dtype=float)
+        r_eff = np.full(n_pts, 0.35 * ((vol_box / n_pts) ** (1.0 / 3.0)), dtype=float)
     else:
         r_eff = np.asarray(vdw_radii_nm, dtype=float)
 
-    # Compute clearance distance = min_i (dist(grid_point, p_i) - r_i) in chunks
+    # Compute clearance distance = min_i (dist(grid_point, p_i) - r_i) using exact PBC minimum-image
     clearances = np.empty(len(grid), dtype=float)
     chunk = 512
     for start in range(0, len(grid), chunk):
         g_sub = grid[start : start + chunk]
-        diff = g_sub[:, None, :] - pts_w[None, :, :]
-        diff -= L[None, None, :] * np.round(diff / L[None, None, :])
+        diff = minimum_image_displacement(g_sub[:, None, :] - pts_w[None, :, :], box_arr)
         dist = np.linalg.norm(diff, axis=-1) - r_eff[None, :]
         clearances[start : start + chunk] = np.min(dist, axis=1)
 
@@ -369,10 +375,9 @@ def _unwrap_molecules_frame(ag: mda.AtomGroup, topo: MoleculeTopology, dimension
     pos_nm = np.asarray(ag.positions, dtype=float) / 10.0
     n_mol = len(pos_nm) // n_at
     pos_nm = pos_nm[: n_mol * n_at].reshape(n_mol, n_at, 3)
-    L = np.asarray(dimensions[:3], dtype=float) / 10.0
+    box_nm = dimensions_angstrom_to_box_nm(dimensions)
     ref = pos_nm[:, 0:1, :]
-    rel = pos_nm - ref
-    rel -= L[None, None, :] * np.round(rel / L[None, None, :])
+    rel = minimum_image_displacement(pos_nm - ref, box_nm)
     return ref + rel
 
 
@@ -495,7 +500,7 @@ def run_voronoi_free_volume_analysis(runs: list[RunRecord], cfg: Config) -> dict
         for fi in frames:
             u.trajectory[fi]
             ts = u.trajectory.ts
-            box_nm = np.asarray(ts.dimensions[:3], dtype=float) / 10.0
+            box_nm = dimensions_angstrom_to_box_nm(ts.dimensions)
             coms_all: list[np.ndarray] = []
             for sp in species:
                 if len(ags[sp]) > 0:

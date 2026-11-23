@@ -22,10 +22,83 @@ from mody_analyse.core.discovery import (
     equilibrated_frame_slice,
     read_xvg_dataframe,
 )
+from mody_analyse.core.pbc import (
+    box_inscribed_radius_nm,
+    box_matrix_from_dimensions,
+    box_volume_nm3,
+    dimensions_angstrom_to_box_nm,
+    minimum_image_displacement,
+)
 
 KB_J_K = 1.380649e-23
 R_KJ_MOL_K = 8.314462618e-3  # kJ / (mol K)
 R_J_MOL_K = 8.314462618
+
+# International Tables for Crystallography (Vol. C, Table 6.1.1.4) Cromer–Mann X-ray form factor coefficients:
+# f(s) = c + sum_{k=1}^4 a_k * exp(-b_k * s^2), where s = q_A^-1 / (4*pi) = q_nm^-1 / (40*pi)
+CROMER_MANN_COEFFS: dict[str, tuple[tuple[float, float, float, float], tuple[float, float, float, float], float]] = {
+    "H": ((0.489918, 0.262003, 0.196767, 0.049879), (20.6593, 7.74039, 49.5519, 2.20159), 0.001305),
+    "C": ((2.31000, 1.02000, 1.58860, 0.865000), (20.8439, 10.2075, 0.568700, 51.6512), 0.215600),
+    "N": ((12.2126, 3.13220, 2.01250, 1.16630), (0.005700, 9.89330, 28.9975, 0.582600), -11.5290),
+    "O": ((3.04850, 2.28680, 1.54630, 0.867000), (13.2771, 5.70110, 0.323900, 32.9089), 0.250800),
+    "F": ((3.53920, 2.64120, 1.51700, 1.02430), (10.2825, 4.29440, 0.261500, 26.1476), 0.277600),
+    "NA": ((4.76260, 3.17360, 1.26740, 1.11280), (3.28500, 8.84220, 0.313600, 129.424), 0.676000),
+    "MG": ((5.42040, 2.17350, 1.22690, 2.30730), (2.82750, 79.2611, 0.380800, 7.19370), 0.858400),
+    "P": ((6.43450, 4.17910, 1.78000, 1.49080), (1.90670, 27.1570, 0.526000, 68.1645), 1.11490),
+    "S": ((6.90530, 5.20340, 1.43790, 1.58630), (1.46790, 22.2151, 0.253600, 56.1720), 0.866900),
+    "CL": ((11.4604, 7.19640, 6.25560, 1.64550), (0.010400, 1.16620, 18.5194, 47.7784), -9.55740),
+    "K": ((8.21860, 7.43980, 1.05190, 0.865900), (12.7949, 0.774800, 213.187, 41.6841), 1.42280),
+    "CA": ((8.62660, 7.38730, 1.58990, 1.02110), (10.4421, 0.659900, 85.7484, 178.437), 1.37510),
+    "BR": ((17.1789, 5.23580, 5.63770, 3.98510), (2.17230, 16.5796, 0.260900, 41.4328), 2.95570),
+    "I": ((20.1472, 18.9949, 7.51380, 2.27350), (4.34700, 0.381400, 27.7660, 66.8776), 4.07120),
+}
+
+
+def cromer_mann_form_factor(element: str, q_inv_nm: np.ndarray) -> np.ndarray:
+    """Evaluate q-dependent Cromer–Mann X-ray atomic form factor f_a(q) for q in nm^-1."""
+    q = np.asarray(q_inv_nm, dtype=float)
+    el = element.strip().upper()
+    if el not in CROMER_MANN_COEFFS:
+        el = el[:2] if el[:2] in CROMER_MANN_COEFFS else (el[:1] if el[:1] in CROMER_MANN_COEFFS else "C")
+    a_vals, b_vals, c_val = CROMER_MANN_COEFFS[el]
+    s_sq = (q / (40.0 * math.pi)) ** 2  # (sin(theta)/lambda)^2 in A^-2
+    f = np.full_like(q, c_val, dtype=float)
+    for ak, bk in zip(a_vals, b_vals):
+        f += ak * np.exp(-bk * s_sq)
+    return np.maximum(f, 0.0)
+
+
+def species_cromer_mann_form_factor(atom_names: list[str] | tuple[str, ...], q_inv_nm: np.ndarray) -> np.ndarray:
+    """Evaluate molecular Cromer–Mann X-ray form factor F_i(q) = sum_{a in i} f_a(q)."""
+    q = np.asarray(q_inv_nm, dtype=float)
+    tot = np.zeros_like(q, dtype=float)
+    for nm in atom_names:
+        letters = "".join(ch for ch in nm if ch.isalpha()).upper()
+        el = letters[:2] if letters[:2] in CROMER_MANN_COEFFS else (letters[:1] if letters[:1] in CROMER_MANN_COEFFS else "C")
+        tot += cromer_mann_form_factor(el, q)
+    return tot
+
+
+def compute_waxs_atomistic_iq(
+    r_nm: np.ndarray,
+    g_atom_pairs: dict[tuple[int, int], np.ndarray],
+    rho_atom_nm3: np.ndarray,
+    elements: list[str] | tuple[str, ...],
+    q_inv_nm: np.ndarray,
+    *,
+    use_lorch: bool = True,
+) -> dict[str, Any]:
+    """Compute full atomistic WAXS scattering intensity I_WAXS(q) using q-dependent Cromer–Mann f_a(q)."""
+    q = np.asarray(q_inv_nm, dtype=float)
+    f_aq = np.vstack([cromer_mann_form_factor(el, q) for el in elements])  # (n_atom_types, n_q)
+    return compute_structure_factor_sq(
+        r_nm,
+        g_atom_pairs,
+        rho_atom_nm3,
+        q,
+        form_factors=f_aq,
+        use_lorch=use_lorch,
+    )
 
 
 def dawass_extrapolate(
@@ -140,14 +213,15 @@ def compute_subvolume_fluctuation_kbi(
 
     box_arr = np.asarray(box_nm, dtype=float)
     if box_arr.ndim == 1:
-        box_arr = np.broadcast_to(box_arr[None, :], (n_frames, 3))
-    l_min = float(np.min(box_arr[:, :3]))
-    radii = [f * l_min for f in r_fracs if 0.0 < f < 0.49]
+        box_arr = np.broadcast_to(box_arr[None, :], (n_frames, box_arr.shape[0]))
+    r_in_min = min(box_inscribed_radius_nm(box_arr[fi]) for fi in range(n_frames))
+    # r_fracs are fractions of 2 * R_in (full inscribed diameter = L_min for cubic/orthorhombic)
+    radii = [f * (2.0 * r_in_min) for f in r_fracs if 0.0 < f < 0.49]
     if not radii:
         return pd.DataFrame()
 
     rng = np.random.default_rng(seed)
-    # Sample uniform fractional sphere centers once per frame
+    # Sample uniform fractional sphere centers once per frame (exact for orthorhombic and triclinic cells)
     frac_centers = rng.random((n_frames, int(n_spheres), 3))
 
     # Collect N_i(frame, sphere) for each radius
@@ -157,16 +231,15 @@ def compute_subvolume_fluctuation_kbi(
         for R in radii:
             counts_by_r[R][sp] = np.zeros((n_frames, int(n_spheres)), dtype=float)
         for fi in range(n_frames):
-            L = box_arr[fi, :3]
-            centers = frac_centers[fi] * L[None, :]  # (S, 3)
-            # Minimal-image distance between centers (S, 1, 3) and pos[fi] (1, M, 3)
-            diff = pos[fi][None, :, :] - centers[:, None, :]
-            diff -= L[None, None, :] * np.round(diff / L[None, None, :])
+            H = box_matrix_from_dimensions(box_arr[fi])
+            centers = frac_centers[fi] @ H  # (S, 3)
+            # Exact minimum-image distance (orthorhombic or triclinic) between centers (S, 1, 3) and pos[fi] (1, M, 3)
+            diff = minimum_image_displacement(pos[fi][None, :, :] - centers[:, None, :], box_arr[fi])
             d2 = np.sum(diff * diff, axis=-1)  # (S, M)
             for R in radii:
                 counts_by_r[R][sp][fi] = np.sum(d2 <= (R * R), axis=-1)
 
-    vol_box_mean = float(np.mean(box_arr[:, 0] * box_arr[:, 1] * box_arr[:, 2]))
+    vol_box_mean = float(np.mean([box_volume_nm3(box_arr[fi]) for fi in range(n_frames)]))
     rows: list[dict[str, Any]] = []
     for i, sp_i in enumerate(species):
         n_mol_i = max(1, coms_by_species[sp_i].shape[1])
@@ -340,17 +413,21 @@ def compute_structure_factor_sq(
             S_partial[i, j, :] = val
             S_partial[j, i, :] = val
 
-    # Total SAXS/SANS intensity I(q) = sum_{i,j} f_i f_j sqrt(x_i x_j) S_ij(q) / sum_i x_i f_i^2
+    # Total SAXS/WAXS/SANS intensity I(q) = sum_{i,j} f_i(q) f_j(q) sqrt(x_i x_j) S_ij(q) / sum_i x_i f_i(q)^2
+    # Accepts either constant form_factors (n_comp,) or q-dependent Cromer–Mann form_factors (n_comp, n_q)
     rho_tot = float(np.sum(rho))
     x = rho / max(rho_tot, 1e-30)
-    f = np.ones(n_comp, dtype=float) if form_factors is None else np.asarray(form_factors, dtype=float)
-    norm = float(np.sum(x * (f ** 2)))
+    if form_factors is None:
+        f_mat = np.ones((n_comp, n_q), dtype=float)
+    else:
+        f_raw = np.asarray(form_factors, dtype=float)
+        f_mat = np.broadcast_to(f_raw[:, None], (n_comp, n_q)) if f_raw.ndim == 1 else f_raw
+    norm_q = np.sum(x[:, None] * (f_mat ** 2), axis=0)  # (n_q,)
     I_q = np.zeros(n_q, dtype=float)
     for i in range(n_comp):
         for j in range(n_comp):
-            I_q += f[i] * f[j] * math.sqrt(max(x[i] * x[j], 0.0)) * S_partial[i, j, :]
-    if norm > 0:
-        I_q = I_q / norm
+            I_q += f_mat[i] * f_mat[j] * math.sqrt(max(x[i] * x[j], 0.0)) * S_partial[i, j, :]
+    I_q = np.divide(I_q, norm_q, out=np.ones_like(I_q), where=norm_q > 1e-18)
 
     # Bhatia–Thornton q-dependent for binary
     bt: dict[str, np.ndarray] = {}
@@ -561,10 +638,9 @@ def _compute_pair_rdf_from_coms(
 
     vol_sum = 0.0
     for fi in range(n_frames):
-        L = boxes_nm[fi, :3]
-        vol_sum += float(L[0] * L[1] * L[2])
-        diff = coms_j[fi][None, :, :] - coms_i[fi][:, None, :]
-        diff -= L[None, None, :] * np.round(diff / L[None, None, :])
+        box_f = boxes_nm[fi]
+        vol_sum += box_volume_nm3(box_f)
+        diff = minimum_image_displacement(coms_j[fi][None, :, :] - coms_i[fi][:, None, :], box_f)
         dist = np.linalg.norm(diff, axis=-1)
         if is_like:
             mask = np.triu(np.ones((ni, nj), dtype=bool), k=1)
@@ -623,7 +699,7 @@ def run_kbi_extended_analysis(
                     for fi in frames:
                         u.trajectory[fi]
                         ts = u.trajectory.ts
-                        box_nm = np.asarray(ts.dimensions[:3], dtype=float) / 10.0
+                        box_nm = dimensions_angstrom_to_box_nm(ts.dimensions)
                         box_list.append(box_nm)
                         for sp in species:
                             ag = u.select_atoms(f"resname {sp}")
@@ -639,14 +715,14 @@ def run_kbi_extended_analysis(
                 coms_by_sp = {}
 
         if boxes_nm.size > 0:
-            avg_box = np.mean(boxes_nm, axis=0)
-            vol_avg = float(avg_box[0] * avg_box[1] * avg_box[2])
+            vol_avg = float(np.mean([box_volume_nm3(boxes_nm[fi]) for fi in range(len(boxes_nm))]))
+            r_in_min = min(box_inscribed_radius_nm(boxes_nm[fi]) for fi in range(len(boxes_nm)))
         else:
             vol_avg = 125.0
-            avg_box = np.array([5.0, 5.0, 5.0])
+            r_in_min = 2.5
 
         rho_vec = np.array([run.mol_counts[sp] / max(vol_avg, 1e-12) for sp in species], dtype=float)
-        r_max_eff = min(cfg.kbi_rmax_nm, 0.49 * float(np.min(avg_box)))
+        r_max_eff = min(cfg.kbi_rmax_nm, 0.98 * r_in_min)
         n_comp = len(species)
         G_dawass_mat = np.zeros((n_comp, n_comp), dtype=float)
         g_pairs_for_sq: dict[tuple[int, int], np.ndarray] = {}
@@ -777,11 +853,17 @@ def run_kbi_extended_analysis(
                     }
                 )
 
-        # q-dependent S(q) & SAXS intensity
+        # q-dependent S(q) & SAXS/WAXS intensity (Cromer–Mann q-dependent form factors)
         if r_common is not None and g_pairs_for_sq:
-            z_counts = _species_electron_counts(run)
-            ff = np.array([z_counts.get(sp, 10.0) for sp in species], dtype=float)
-            sq = compute_structure_factor_sq(r_common, g_pairs_for_sq, rho_vec, q_grid, form_factors=ff)
+            ff_cm = np.vstack(
+                [
+                    species_cromer_mann_form_factor(run.topologies[sp].atom_names, q_grid)
+                    if sp in run.topologies
+                    else np.full_like(q_grid, 10.0)
+                    for sp in species
+                ]
+            )
+            sq = compute_structure_factor_sq(r_common, g_pairs_for_sq, rho_vec, q_grid, form_factors=ff_cm)
             for qi, qv in enumerate(sq["q_inv_nm"]):
                 row_q: dict[str, Any] = {
                     "run_id": run.run_id,

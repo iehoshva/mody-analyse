@@ -17,6 +17,11 @@ from mody_analyse.core.discovery import (
     compute_whole_coms_vectorized,
     equilibrated_frame_slice,
 )
+from mody_analyse.core.pbc import (
+    box_volume_nm3,
+    dimensions_angstrom_to_box_nm,
+    minimum_image_displacement,
+)
 
 KB_J_K = 1.380649e-23
 E_CHARGE_C = 1.602176634e-19
@@ -27,14 +32,12 @@ NM2_PER_PS_TO_M2_PER_S = 1e-6
 
 
 def _unwrap_com_series(coms_nm: np.ndarray, boxes_nm: np.ndarray) -> np.ndarray:
-    """Continuously unwrap molecular COM trajectory (n_frames, n_mol, 3) across periodic boundaries."""
+    """Continuously unwrap molecular COM trajectory (n_frames, n_mol, 3) across orthorhombic or triclinic PBC."""
     pos = np.asarray(coms_nm, dtype=float).copy()
     if pos.shape[0] <= 1:
         return pos
     for fi in range(1, pos.shape[0]):
-        L = boxes_nm[fi, :3]
-        delta = pos[fi] - pos[fi - 1]
-        delta -= L[None, :] * np.round(delta / L[None, :])
+        delta = minimum_image_displacement(pos[fi] - pos[fi - 1], boxes_nm[fi])
         pos[fi] = pos[fi - 1] + delta
     return pos
 
@@ -364,12 +367,11 @@ def _whole_molecule_positions_and_dipoles(
     pos_nm = np.asarray(ag.positions, dtype=float) / 10.0
     n_mol = len(pos_nm) // n_at
     pos_nm = pos_nm[: n_mol * n_at].reshape(n_mol, n_at, 3)
-    L = np.asarray(dimensions[:3], dtype=float) / 10.0
+    box_nm = dimensions_angstrom_to_box_nm(dimensions)
 
-    # Unwrap atoms relative to atom 0 of each molecule
+    # Unwrap atoms relative to atom 0 of each molecule (exact for orthorhombic or triclinic cells)
     ref = pos_nm[:, 0:1, :]
-    rel = pos_nm - ref
-    rel -= L[None, None, :] * np.round(rel / L[None, None, :])
+    rel = minimum_image_displacement(pos_nm - ref, box_nm)
     whole = ref + rel
 
     masses = np.asarray(topo.atom_masses, dtype=float)
@@ -431,7 +433,7 @@ def _collect_run_dynamics_arrays(
         u.trajectory[fi]
         ts = u.trajectory.ts
         times_ps.append(float(ts.time))
-        boxes_nm.append(np.asarray(ts.dimensions[:3], dtype=float) / 10.0)
+        boxes_nm.append(dimensions_angstrom_to_box_nm(ts.dimensions))
         for sp in species:
             if len(ags[sp]) == 0:
                 continue
@@ -442,7 +444,7 @@ def _collect_run_dynamics_arrays(
 
     boxes_arr = np.asarray(boxes_nm, dtype=float)
     dt_ps = float(np.median(np.diff(times_ps))) if len(times_ps) >= 2 else 1.0
-    vol_mean_nm3 = float(np.mean(boxes_arr[:, 0] * boxes_arr[:, 1] * boxes_arr[:, 2]))
+    vol_mean_nm3 = float(np.mean([box_volume_nm3(boxes_arr[fi]) for fi in range(len(boxes_arr))]))
 
     coms_unwrapped = {
         sp: _unwrap_com_series(np.stack(coms_raw[sp], axis=0), boxes_arr)

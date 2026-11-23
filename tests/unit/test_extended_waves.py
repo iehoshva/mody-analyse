@@ -45,8 +45,18 @@ from mody_analyse.analyzers.kbi_extended import (
     compute_structure_factor_sq,
     compute_subvolume_fluctuation_kbi,
     compute_temperature_series_gibbs_helmholtz,
+    compute_waxs_atomistic_iq,
+    cromer_mann_form_factor,
     dawass_extrapolate,
     integrate_composition_series_kbi,
+    species_cromer_mann_form_factor,
+)
+from mody_analyse.core.pbc import (
+    box_inscribed_radius_nm,
+    box_matrix_from_dimensions,
+    box_volume_nm3,
+    minimum_image_displacement,
+    wrap_positions,
 )
 from mody_analyse.analyzers.spectroscopy import THZ_TO_CM1, compute_ir_spectrum, compute_vdos_spectrum
 from mody_analyse.analyzers.thermo_bulk import compute_npt_fluctuations
@@ -457,3 +467,62 @@ def test_alchemical_ti_bar_mbar_exact_harmonic_oscillators(tmp_path: Path) -> No
     assert fep_res["summary"]["dg_bar_kj_mol"] == pytest.approx(expected_kj, rel=0.04)
     assert fep_res["summary"]["dg_ti_trap_kj_mol"] == pytest.approx(expected_kj, rel=0.05)
     assert fep_res["summary"]["overlap_qc_status"] == "PASS"
+
+
+# ---------------------------------------------------------------------------
+# 4. General Triclinic PBC & Cromer-Mann Atomistic WAXS/SAXS
+# ---------------------------------------------------------------------------
+
+def test_triclinic_pbc_rhombic_dodecahedron_voronoi_and_subvolume() -> None:
+    # Standard GROMACS rhombic dodecahedron: a=b=c=d, alpha=60, beta=60, gamma=90 -> V = d^3 / sqrt(2)
+    d = 4.0
+    box_rd = np.array([d, d, d, 60.0, 60.0, 90.0])
+    vol = box_volume_nm3(box_rd)
+    assert vol == pytest.approx((d ** 3) / math.sqrt(2.0), rel=1e-6)
+    # Inscribed sphere radius of rhombic dodecahedron with lattice vector length d is d / 2 * sqrt(2/3) ...
+    # Wait: shortest perpendicular height between parallel (100)/(010)/(001) planes = d * sqrt(2/3) or d/sqrt(2) -> R_in = 0.5 * d / sqrt(2)
+    r_in = box_inscribed_radius_nm(box_rd)
+    assert r_in == pytest.approx(0.5 * d / math.sqrt(2.0), rel=1e-6)
+
+    H = box_matrix_from_dimensions(box_rd)
+    # A displacement equal to H[0] + H[2] + small epsilon [0.05, -0.04, 0.03] must reduce exactly to epsilon!
+    eps = np.array([[0.05, -0.04, 0.03]])
+    shifted = eps + H[0] + H[2]
+    mic = minimum_image_displacement(shifted, box_rd)
+    assert np.allclose(mic, eps, atol=1e-10)
+
+    # Periodic Voronoi on a 2x2x2 triclinic sub-lattice (8 points in rhombic dodecahedron) -> exact volume = V / 8
+    f1d = np.array([0.25, 0.75])
+    fpts = np.stack(np.meshgrid(f1d, f1d, f1d, indexing="ij"), axis=-1).reshape(-1, 3)
+    pts_triclinic = wrap_positions(fpts @ H, box_rd)
+    vor = compute_periodic_voronoi(pts_triclinic, box_rd, grid_n=10)
+    assert vor["mean_voronoi_vol_nm3"] == pytest.approx(vol / 8.0, rel=1e-5)
+
+    # Subvolume fluctuation KBI runs cleanly on triclinic box without error
+    rng = np.random.default_rng(5)
+    frac_pos = rng.random((15, 40, 3))
+    coms_tric = {"A": np.einsum("fmi,ij->fmj", frac_pos, H)}
+    sv_df = compute_subvolume_fluctuation_kbi(coms_tric, box_rd, n_spheres=24, seed=5)
+    assert len(sv_df) == 1
+    assert np.isfinite(sv_df["g_subvol_rmax_cm3_mol"].iloc[0])
+
+
+def test_cromer_mann_form_factors_and_waxs_iq() -> None:
+    q = np.linspace(0.0, 60.0, 61)  # nm^-1
+    expected_z = {"H": 1, "C": 6, "N": 7, "O": 8, "NA": 11, "CL": 17}
+    for el, z in expected_z.items():
+        f_q = cromer_mann_form_factor(el, q)
+        assert f_q[0] == pytest.approx(z, abs=0.02)
+        # X-ray form factor monotonically decreases with q
+        assert np.all(np.diff(f_q) <= 1e-6)
+        assert f_q[-1] < f_q[0]
+
+    # Water molecule H2O has f(q=0) ≈ 10 electrons
+    f_h2o = species_cromer_mann_form_factor(["O1", "H1", "H2"], q)
+    assert f_h2o[0] == pytest.approx(10.0, abs=0.02)
+
+    # Full atomistic WAXS with ideal gas g(r)=1 yields exact I_WAXS(q) = 1.0 at all q
+    r = np.linspace(0.0, 2.5, 126)
+    g_atom = {(0, 0): np.ones_like(r), (0, 1): np.ones_like(r), (1, 1): np.ones_like(r)}
+    waxs = compute_waxs_atomistic_iq(r, g_atom, np.array([33.0, 66.0]), ["O", "H"], q)
+    assert np.allclose(waxs["I_total"], 1.0, atol=1e-10)
