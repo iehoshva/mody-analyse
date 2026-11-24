@@ -192,8 +192,8 @@ def run_interface_slab_analysis(runs: list[RunRecord], cfg: Config) -> dict[str,
         is_slab = force_slab
         species_profiles: dict[str, pd.DataFrame] = {}
 
-        if run.prod_tpr.exists() and run.prod_xtc.exists():
-            u = mda.Universe(str(run.prod_tpr), str(run.prod_xtc))
+        if run.tpr_path.exists() and run.xtc_path.exists():
+            u = mda.Universe(str(run.tpr_path), str(run.xtc_path))
             f_start, f_stop, f_step = equilibrated_frame_slice(u, cfg.t_eq_ns, cfg.t_end_ns, stride=max(1, cfg.rdf_stride))
             frames = list(range(f_start, f_stop, f_step))[:200]
             if frames:
@@ -204,7 +204,7 @@ def run_interface_slab_analysis(runs: list[RunRecord], cfg: Config) -> dict[str,
                     is_slab = True
 
                 if is_slab:
-                    species = [sp for sp, cnt in sorted(run.mol_counts.items()) if cnt > 0 and sp in run.topologies]
+                    species = [sp for sp, cnt in sorted(run.molecule_counts.items()) if cnt > 0 and sp in run.topologies]
                     ags = {sp: u.select_atoms(f"resname {sp}") for sp in species}
                     boxes = []
                     z_map: dict[str, list[np.ndarray]] = {sp: [] for sp in species}
@@ -242,7 +242,7 @@ def run_interface_slab_analysis(runs: list[RunRecord], cfg: Config) -> dict[str,
 
         # Surface tension from stress.xvg or thermo.xvg
         st_res = {"gamma_mn_m": float("nan"), "gamma_sem_mn_m": float("nan"), "delta_p_bar": float("nan")}
-        for xvg_cand in (run.stress_xvg, run.thermo_xvg):
+        for xvg_cand in (run.stress_path, run.thermo_path):
             if xvg_cand is not None and xvg_cand.exists():
                 df_p = read_xvg_dataframe(xvg_cand)
                 if df_p.empty:

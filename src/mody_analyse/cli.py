@@ -38,6 +38,7 @@ from mody_analyse.analyzers.spectroscopy import run_spectroscopy_analysis
 from mody_analyse.analyzers.thermo_bulk import run_thermo_bulk_analysis
 from mody_analyse.core.config import Config, load_config
 from mody_analyse.core.discovery import discover_runs
+from mody_analyse.core.edr_extractor import sync_runs_xvg_from_edr
 from mody_analyse.core.registry import (
     ANALYSIS_PROFILES,
     evaluate_eligibility,
@@ -122,6 +123,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print JSON catalog of all available analysis modules, profiles, and physics prerequisites, then exit",
     )
+    p.add_argument(
+        "--sync-edr",
+        action="store_true",
+        help="Auto-create or update missing/incomplete thermo.xvg & stress.xvg from prod.edr for all runs, then exit",
+    )
     return p
 
 
@@ -180,6 +186,27 @@ def execute_pipeline(
     tables_dir = cfg.results_dir / "tables"
     tables_dir.mkdir(parents=True, exist_ok=True)
     results: dict[str, Any] = _load_cached_tables(tables_dir)
+
+    # Auto-sync missing/incomplete thermo.xvg & stress.xvg from prod.edr before Gatekeeper checks
+    opts = (cfg.analyses or {}).get("options") or {}
+    if bool(opts.get("auto_extract_edr", True)) and runs:
+        sync_df = sync_runs_xvg_from_edr(
+            runs,
+            extra_thermo_terms=opts.get("extra_thermo_terms") or (),
+            extra_stress_terms=opts.get("extra_stress_terms") or (),
+            backend=str(opts.get("edr_backend", "auto")),
+        )
+        if not sync_df.empty:
+            results["edr_sync_report"] = sync_df
+            _save_tables({"edr_sync_report": sync_df}, tables_dir)
+            for _, sr in sync_df.iterrows():
+                if sr["status"] in {"created", "updated"}:
+                    print(f"[EDR Sync] {sr['status'].upper()} {sr['run_id']}/{sr['target']} ({sr['backend']}): {sr['message']}")
+            # Refresh runs if stress_path was newly created on disk
+            if (sync_df["status"].isin({"created", "updated"})).any():
+                all_runs_refreshed = discover_runs(cfg)
+                by_id = {r.run_id: r for r in all_runs_refreshed}
+                runs = [by_id.get(r.run_id, r) for r in runs]
     bench_df = load_benchmark_reference(cfg)
     if not bench_df.empty:
         results["cosmors"] = bench_df
@@ -441,6 +468,14 @@ def main() -> None:
         print(json.dumps(export_catalog_payload(), indent=2))
         return
     cfg = load_config(args.config)
+    if args.sync_edr:
+        runs = discover_runs(cfg)
+        sync_df = sync_runs_xvg_from_edr(runs)
+        if sync_df.empty:
+            print("No runs discovered.")
+        else:
+            print(sync_df[["run_id", "target", "status", "backend", "added_columns", "message"]].to_string(index=False))
+        return
     analyses_list = [x.strip() for x in args.analyses.split(",") if x.strip()] if args.analyses else None
     execute_pipeline(
         cfg,

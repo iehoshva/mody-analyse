@@ -101,3 +101,5 @@ analyses:
     sasa_n_points: 92
     voronoi_stride: 10
     force_slab: false
+    auto_extract_edr: true
+    edr_backend: "auto"

@@ -170,9 +170,9 @@ def run_thermo_bulk_analysis(runs: list[RunRecord], cfg: Config) -> dict[str, pd
 
     rows: list[dict[str, Any]] = []
     for run in runs:
-        if not run.thermo_xvg.exists():
+        if not run.thermo_path.exists():
             continue
-        df = read_xvg_dataframe(run.thermo_xvg)
+        df = read_xvg_dataframe(run.thermo_path)
         if df.empty:
             continue
         time_col = df.columns[0]
@@ -212,11 +212,11 @@ def run_thermo_bulk_analysis(runs: list[RunRecord], cfg: Config) -> dict[str, pd
 
         # Compute total gas-phase reference energy for the box if species gas energies provided
         gas_box_kj: float | None = None
-        if gas_map and run.mol_counts:
-            if all(sp in gas_map for sp in run.mol_counts if run.mol_counts[sp] > 0):
-                gas_box_kj = sum(float(gas_map[sp]) * cnt for sp, cnt in run.mol_counts.items() if cnt > 0)
+        if gas_map and run.molecule_counts:
+            if all(sp in gas_map for sp in run.molecule_counts if run.molecule_counts[sp] > 0):
+                gas_box_kj = sum(float(gas_map[sp]) * cnt for sp, cnt in run.molecule_counts.items() if cnt > 0)
 
-        n_mol_total = max(1, sum(run.mol_counts.values()))
+        n_mol_total = max(1, sum(run.molecule_counts.values()))
         res = compute_npt_fluctuations(
             t_arr,
             v_arr,

@@ -374,13 +374,13 @@ def _whole_molecule_positions_and_dipoles(
     rel = minimum_image_displacement(pos_nm - ref, box_nm)
     whole = ref + rel
 
-    masses = np.asarray(topo.atom_masses, dtype=float)
+    masses = np.asarray(topo.masses, dtype=float)
     if len(masses) != n_at or float(np.sum(masses)) <= 0:
         masses = np.ones(n_at, dtype=float)
     m_sum = float(np.sum(masses))
     coms = np.sum(whole * masses[None, :, None], axis=1) / m_sum  # (n_mol, 3)
 
-    charges = np.asarray(topo.atom_charges, dtype=float)
+    charges = np.asarray(topo.charges, dtype=float)
     if len(charges) != n_at:
         charges = np.zeros(n_at, dtype=float)
     rel_com = whole - coms[:, None, :]
@@ -410,15 +410,15 @@ def _collect_run_dynamics_arrays(
     cfg: Config,
     stride: int = 1,
 ) -> dict[str, Any] | None:
-    if not (run.prod_tpr.exists() and run.prod_xtc.exists()):
+    if not (run.tpr_path.exists() and run.xtc_path.exists()):
         return None
-    u = mda.Universe(str(run.prod_tpr), str(run.prod_xtc))
+    u = mda.Universe(str(run.tpr_path), str(run.xtc_path))
     f_start, f_stop, f_step = equilibrated_frame_slice(u, cfg.t_eq_ns, cfg.t_end_ns, stride=max(1, int(stride)))
     frames = list(range(f_start, f_stop, f_step))
     if len(frames) < 4:
         return None
 
-    species = [sp for sp, cnt in sorted(run.mol_counts.items()) if cnt > 0 and sp in run.topologies]
+    species = [sp for sp, cnt in sorted(run.molecule_counts.items()) if cnt > 0 and sp in run.topologies]
     if not species:
         return None
 
@@ -453,7 +453,7 @@ def _collect_run_dynamics_arrays(
     }
     uvecs_arr = {sp: np.stack(uvecs[sp], axis=0) for sp in species if uvecs[sp]}
     dipoles_arr = {sp: np.stack(dipoles[sp], axis=0) for sp in species if dipoles[sp]}
-    net_charges = {sp: float(sum(run.topologies[sp].atom_charges)) for sp in species}
+    net_charges = {sp: float(sum(run.topologies[sp].charges)) for sp in species}
 
     return {
         "dt_ps": dt_ps,
@@ -535,7 +535,7 @@ def run_glassy_dynamics_analysis(runs: list[RunRecord], cfg: Config) -> dict[str
             continue
         for sp, coms in data["coms_unwrapped"].items():
             # Estimate characteristic wavevector q* = 2*pi / (V / N_tot)^(1/3)
-            n_tot = max(1, sum(run.mol_counts.values()))
+            n_tot = max(1, sum(run.molecule_counts.values()))
             d_mol = (data["vol_mean_nm3"] / n_tot) ** (1.0 / 3.0)
             q_star = 2.0 * math.pi / max(d_mol, 0.2)
             res = compute_glassy_metrics(coms, data["dt_ps"], q_star_inv_nm=q_star)

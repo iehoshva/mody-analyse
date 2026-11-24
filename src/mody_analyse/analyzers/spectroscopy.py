@@ -174,11 +174,11 @@ def run_spectroscopy_analysis(runs: list[RunRecord], cfg: Config) -> dict[str, p
     ir_rows: list[dict[str, Any]] = []
 
     for run in runs:
-        trr = run.prod_tpr.parent / "prod.trr"
-        traj = trr if trr.exists() else run.prod_xtc
-        if not (run.prod_tpr.exists() and traj.exists()):
+        trr = run.tpr_path.parent / "prod.trr"
+        traj = trr if trr.exists() else run.xtc_path
+        if not (run.tpr_path.exists() and traj.exists()):
             continue
-        u = mda.Universe(str(run.prod_tpr), str(traj))
+        u = mda.Universe(str(run.tpr_path), str(traj))
         f_start, f_stop, f_step = equilibrated_frame_slice(u, cfg.t_eq_ns, cfg.t_end_ns, stride=1)
         frames = list(range(f_start, f_stop, f_step))
         if len(frames) < 16:
@@ -204,9 +204,9 @@ def run_spectroscopy_analysis(runs: list[RunRecord], cfg: Config) -> dict[str, p
         for sp, topo in run.topologies.items():
             ag = u.select_atoms(f"resname {sp}")
             n_at = len(topo.atom_names)
-            if n_at > 0 and len(ag) > 0 and len(topo.atom_charges) == n_at:
+            if n_at > 0 and len(ag) > 0 and len(topo.charges) == n_at:
                 n_mol = len(ag) // n_at
-                charges[ag.indices[: n_mol * n_at]] = np.tile(np.asarray(topo.atom_charges, dtype=float), n_mol)
+                charges[ag.indices[: n_mol * n_at]] = np.tile(np.asarray(topo.charges, dtype=float), n_mol)
 
         has_charges = bool(np.any(np.abs(charges) > 1e-6))
         vels_list: list[np.ndarray] = []

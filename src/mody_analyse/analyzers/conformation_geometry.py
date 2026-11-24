@@ -172,18 +172,23 @@ def compute_dihedral_fes_1d(
 
 
 def find_rotatable_dihedrals(topo: MoleculeTopology, max_dihedrals: int = 4) -> list[tuple[int, int, int, int]]:
-    """Identify heavy-atom rotatable torsions (i-j-k-l) from molecular bond graph."""
+    """Identify heavy-atom rotatable torsions (0-based i-j-k-l) from molecular topology."""
+    if topo.rotatable_dihedrals_1based:
+        return [
+            (a - 1, b - 1, c - 1, d - 1)
+            for a, b, c, d in topo.rotatable_dihedrals_1based[:max_dihedrals]
+        ]
     n_at = len(topo.atom_names)
-    if n_at < 4 or not topo.bonds:
+    bonds_0based = [(a - 1, b - 1) for a, b in topo.bonds_1based]
+    if n_at < 4 or not bonds_0based:
         return []
     elements = [_element_from_name(name) for name in topo.atom_names]
     adj: dict[int, set[int]] = {i: set() for i in range(n_at)}
-    for a, b in topo.bonds:
+    for a, b in bonds_0based:
         if 0 <= a < n_at and 0 <= b < n_at:
             adj[a].add(b)
             adj[b].add(a)
 
-    # Detect ring edges via simple BFS path check excluding edge (j, k)
     def _in_ring(u: int, v: int) -> bool:
         visited = {u}
         queue = [w for w in adj[u] if w != v]
@@ -201,7 +206,7 @@ def find_rotatable_dihedrals(topo: MoleculeTopology, max_dihedrals: int = 4) -> 
 
     torsions: list[tuple[int, int, int, int]] = []
     seen_bonds: set[tuple[int, int]] = set()
-    for j, k in topo.bonds:
+    for j, k in bonds_0based:
         if elements[j] == "H" or elements[k] == "H":
             continue
         key = (min(j, k), max(j, k))
@@ -391,9 +396,9 @@ def run_conformation_analysis(runs: list[RunRecord], cfg: Config) -> dict[str, p
     fes_rows: list[dict[str, Any]] = []
 
     for run in runs:
-        if not (run.prod_tpr.exists() and run.prod_xtc.exists()):
+        if not (run.tpr_path.exists() and run.xtc_path.exists()):
             continue
-        u = mda.Universe(str(run.prod_tpr), str(run.prod_xtc))
+        u = mda.Universe(str(run.tpr_path), str(run.xtc_path))
         f_start, f_stop, f_step = equilibrated_frame_slice(u, cfg.t_eq_ns, cfg.t_end_ns, stride=max(1, cfg.rdf_stride))
         frames = list(range(f_start, f_stop, f_step))
         if not frames:
@@ -413,7 +418,7 @@ def run_conformation_analysis(runs: list[RunRecord], cfg: Config) -> dict[str, p
             if len(ag) == 0 or len(topo.atom_names) < 2:
                 continue
             elements = [_element_from_name(nm) for nm in topo.atom_names]
-            masses = np.asarray(topo.atom_masses, dtype=float)
+            masses = np.asarray(topo.masses, dtype=float)
             heavy_idx = [idx for idx, el in enumerate(elements) if el != "H"]
 
             samples: list[np.ndarray] = []
@@ -485,15 +490,15 @@ def run_voronoi_free_volume_analysis(runs: list[RunRecord], cfg: Config) -> dict
     rows: list[dict[str, Any]] = []
 
     for run in runs:
-        if not (run.prod_tpr.exists() and run.prod_xtc.exists()):
+        if not (run.tpr_path.exists() and run.xtc_path.exists()):
             continue
-        u = mda.Universe(str(run.prod_tpr), str(run.prod_xtc))
+        u = mda.Universe(str(run.tpr_path), str(run.xtc_path))
         f_start, f_stop, f_step = equilibrated_frame_slice(u, cfg.t_eq_ns, cfg.t_end_ns, stride=v_stride)
         frames = list(range(f_start, f_stop, f_step))[:25]
         if not frames:
             continue
 
-        species = [sp for sp, cnt in sorted(run.mol_counts.items()) if cnt > 0 and sp in run.topologies]
+        species = [sp for sp, cnt in sorted(run.molecule_counts.items()) if cnt > 0 and sp in run.topologies]
         ags = {sp: u.select_atoms(f"resname {sp}") for sp in species}
 
         frame_metrics: list[dict[str, Any]] = []
@@ -503,8 +508,20 @@ def run_voronoi_free_volume_analysis(runs: list[RunRecord], cfg: Config) -> dict
             box_nm = dimensions_angstrom_to_box_nm(ts.dimensions)
             coms_all: list[np.ndarray] = []
             for sp in species:
-                if len(ags[sp]) > 0:
-                    coms_all.append(compute_whole_coms_vectorized(ags[sp], run.topologies[sp], ts.dimensions) / 10.0)
+                topo = run.topologies[sp]
+                if len(ags[sp]) > 0 and topo.n_atoms > 0:
+                    n_mol_sp = len(ags[sp]) // topo.n_atoms
+                    if n_mol_sp > 0:
+                        coms_all.append(
+                            compute_whole_coms_vectorized(
+                                ags[sp].positions[: n_mol_sp * topo.n_atoms],
+                                n_mol_sp,
+                                topo.n_atoms,
+                                topo.masses,
+                                ts.dimensions[:3],
+                            )
+                            / 10.0
+                        )
             if not coms_all:
                 continue
             pts = np.vstack(coms_all)

@@ -679,16 +679,16 @@ def run_kbi_extended_analysis(
     block_rows: list[dict[str, Any]] = []
 
     for run in runs:
-        species = [sp for sp, cnt in sorted(run.mol_counts.items()) if cnt > 0]
+        species = [sp for sp, cnt in sorted(run.molecule_counts.items()) if cnt > 0]
         if not species:
             continue
 
         # Load trajectory COMs if available (enables block averaging, subvolume fluctuation, and on-the-fly RDFs)
         coms_by_sp: dict[str, np.ndarray] = {}
         boxes_nm = np.zeros((0, 3), dtype=float)
-        if run.prod_tpr.exists() and run.prod_xtc.exists():
+        if run.tpr_path.exists() and run.xtc_path.exists():
             try:
-                u = mda.Universe(str(run.prod_tpr), str(run.prod_xtc))
+                u = mda.Universe(str(run.tpr_path), str(run.xtc_path))
                 f_start, f_stop, f_step = equilibrated_frame_slice(
                     u, cfg.t_eq_ns, cfg.t_end_ns, stride=max(1, cfg.rdf_stride)
                 )
@@ -704,9 +704,20 @@ def run_kbi_extended_analysis(
                         for sp in species:
                             ag = u.select_atoms(f"resname {sp}")
                             topo = run.topologies.get(sp)
-                            if topo and len(ag) > 0:
-                                coms = compute_whole_coms_vectorized(ag, topo, ts.dimensions) / 10.0
-                                com_lists[sp].append(coms)
+                            if topo and len(ag) > 0 and topo.n_atoms > 0:
+                                n_mol_sp = len(ag) // topo.n_atoms
+                                if n_mol_sp > 0:
+                                    coms = (
+                                        compute_whole_coms_vectorized(
+                                            ag.positions[: n_mol_sp * topo.n_atoms],
+                                            n_mol_sp,
+                                            topo.n_atoms,
+                                            topo.masses,
+                                            ts.dimensions[:3],
+                                        )
+                                        / 10.0
+                                    )
+                                    com_lists[sp].append(coms)
                     boxes_nm = np.asarray(box_list, dtype=float)
                     for sp in species:
                         if com_lists[sp]:
@@ -721,7 +732,7 @@ def run_kbi_extended_analysis(
             vol_avg = 125.0
             r_in_min = 2.5
 
-        rho_vec = np.array([run.mol_counts[sp] / max(vol_avg, 1e-12) for sp in species], dtype=float)
+        rho_vec = np.array([run.molecule_counts[sp] / max(vol_avg, 1e-12) for sp in species], dtype=float)
         r_max_eff = min(cfg.kbi_rmax_nm, 0.98 * r_in_min)
         n_comp = len(species)
         G_dawass_mat = np.zeros((n_comp, n_comp), dtype=float)
@@ -745,8 +756,8 @@ def run_kbi_extended_analysis(
                 else:
                     # Fallback to precomputed rdf_*.xvg if present
                     for key in (f"{sp_i}_{sp_j}", f"{sp_j}_{sp_i}", f"{sp_i.lower()}_{sp_j.lower()}"):
-                        if key in run.rdf_xvgs and run.rdf_xvgs[key].exists():
-                            df_rdf = read_xvg_dataframe(run.rdf_xvgs[key])
+                        if key in run.rdf_paths and run.rdf_paths[key].exists():
+                            df_rdf = read_xvg_dataframe(run.rdf_paths[key])
                             if df_rdf.shape[1] >= 2:
                                 r_arr, g_arr = rebin_rdf(
                                     df_rdf.iloc[:, 0].to_numpy(dtype=float),
@@ -758,7 +769,7 @@ def run_kbi_extended_analysis(
                     continue
 
                 g_corr = apply_gvdv_correction(
-                    r_arr, g_arr, rho_vec[j], run.mol_counts[sp_j], is_like_pair=(sp_i == sp_j)
+                    r_arr, g_arr, rho_vec[j], run.molecule_counts[sp_j], is_like_pair=(sp_i == sp_j)
                 )
                 dw = dawass_extrapolate(r_arr, g_corr)
                 G_dawass_mat[i, j] = dw["g_inf_cm3_mol"] if np.isfinite(dw["g_inf_cm3_mol"]) else 0.0
@@ -790,7 +801,7 @@ def run_kbi_extended_analysis(
                             is_like=(sp_i == sp_j),
                         )
                         gb_c = apply_gvdv_correction(
-                            rb, gb, rho_vec[j], run.mol_counts[sp_j], is_like_pair=(sp_i == sp_j)
+                            rb, gb, rho_vec[j], run.molecule_counts[sp_j], is_like_pair=(sp_i == sp_j)
                         )
                         b_dw = dawass_extrapolate(rb, gb_c)["g_inf_cm3_mol"]
                         if np.isfinite(b_dw):
@@ -905,13 +916,13 @@ def run_kbi_composition_series(
         run = by_run.get(str(r_bt["run_id"]))
         if run is None:
             continue
-        species = sorted(sp for sp, c in run.mol_counts.items() if c > 0)
+        species = sorted(sp for sp, c in run.molecule_counts.items() if c > 0)
         if len(species) < 2:
             continue
         if primary_sp is None:
             primary_sp = cfg.primary_solvent if cfg.primary_solvent in species else species[0]
-        tot = sum(run.mol_counts.values())
-        x1 = run.mol_counts.get(primary_sp, 0) / max(tot, 1)
+        tot = sum(run.molecule_counts.values())
+        x1 = run.molecule_counts.get(primary_sp, 0) / max(tot, 1)
         rows.append(
             {
                 "run_id": run.run_id,

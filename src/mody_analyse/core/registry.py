@@ -465,8 +465,9 @@ def _find_dhdl_files(runs: list[Any], workflow_root: Path | None) -> list[Path]:
     seen: set[Path] = set()
     roots: list[Path] = []
     for r in runs:
-        if getattr(r, "run_dir", None):
-            roots.append(Path(r.run_dir))
+        r_path = getattr(r, "path", None) or getattr(r, "run_dir", None)
+        if r_path:
+            roots.append(Path(r_path))
     if workflow_root and workflow_root.exists():
         roots.append(workflow_root)
     for root in roots:
@@ -481,21 +482,21 @@ def _find_dhdl_files(runs: list[Any], workflow_root: Path | None) -> list[Path]:
 
 def _inspect_runs_capabilities(runs: list[Any], cfg: Any) -> dict[str, Any]:
     """Inspect discovered runs cheaply to determine physics/data eligibility for every module."""
-    has_thermo = any(getattr(r, "thermo_xvg", None) and Path(r.thermo_xvg).exists() for r in runs)
-    has_stress = any(getattr(r, "stress_xvg", None) and Path(r.stress_xvg).exists() for r in runs)
+    has_thermo = any(getattr(r, "thermo_path", None) and Path(r.thermo_path).exists() for r in runs)
+    has_stress = any(getattr(r, "stress_path", None) and Path(r.stress_path).exists() for r in runs)
     has_traj = any(
-        getattr(r, "prod_tpr", None)
-        and Path(r.prod_tpr).exists()
-        and getattr(r, "prod_xtc", None)
-        and Path(r.prod_xtc).exists()
+        getattr(r, "tpr_path", None)
+        and Path(r.tpr_path).exists()
+        and getattr(r, "xtc_path", None)
+        and Path(r.xtc_path).exists()
         for r in runs
     )
     has_trr = any(
-        getattr(r, "prod_tpr", None)
-        and (Path(r.prod_tpr).parent / "prod.trr").exists()
+        getattr(r, "tpr_path", None)
+        and (Path(r.tpr_path).parent / "prod.trr").exists()
         for r in runs
     )
-    has_rdf = any(bool(getattr(r, "rdf_xvgs", None)) for r in runs)
+    has_rdf = any(bool(getattr(r, "rdf_paths", None)) for r in runs)
     has_topol = any(bool(getattr(r, "topologies", None)) for r in runs)
 
     # Check charges, ionic species, polyatomic species
@@ -505,7 +506,9 @@ def _inspect_runs_capabilities(runs: list[Any], cfg: Any) -> dict[str, Any]:
     has_torsion_candidate = False
     for r in runs:
         for topo in (getattr(r, "topologies", None) or {}).values():
-            charges = getattr(topo, "atom_charges", None) or ()
+            charges = getattr(topo, "charges", None)
+            if charges is None:
+                charges = ()
             if any(abs(float(q)) > 1e-6 for q in charges):
                 has_atomic_charges = True
             if abs(float(sum(charges))) > 1e-3:
@@ -520,7 +523,7 @@ def _inspect_runs_capabilities(runs: list[Any], cfg: Any) -> dict[str, Any]:
     comp_signatures: set[tuple[tuple[str, float], ...]] = set()
     temperatures: set[float] = set()
     for r in runs:
-        counts = getattr(r, "mol_counts", None) or {}
+        counts = getattr(r, "molecule_counts", None) or {}
         tot = sum(counts.values())
         if tot > 0:
             sig = tuple(sorted((k, round(v / tot, 4)) for k, v in counts.items()))
@@ -541,9 +544,9 @@ def _inspect_runs_capabilities(runs: list[Any], cfg: Any) -> dict[str, Any]:
     has_velocities = False
     is_slab_box = False
     for r in runs:
-        tpr = getattr(r, "prod_tpr", None)
+        tpr = getattr(r, "tpr_path", None)
         trr = Path(tpr).parent / "prod.trr" if tpr else None
-        xtc = getattr(r, "prod_xtc", None)
+        xtc = getattr(r, "xtc_path", None)
         traj_cand = trr if (trr and trr.exists()) else xtc
         if tpr and Path(tpr).exists() and traj_cand and Path(traj_cand).exists():
             try:
