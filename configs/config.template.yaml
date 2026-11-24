@@ -1,4 +1,4 @@
-# MoDy Analyse v2.0.0 — Global Portable Project Configuration Template
+# MoDy Analyse v2.0.1 — Global Portable Project Configuration Template
 # Works out of the box for ANY 1-component, binary DES, or N-component solvent + 0..M solutes.
 
 project_root: "./data/runs"

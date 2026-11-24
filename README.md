@@ -1,4 +1,4 @@
-# MoDy Analyse v2.0.0
+# MoDy Analyse v2.0.1
 
 **Global, Modular MD–KBI–Green–Kubo, Electrolyte/Spectroscopy/FEP, and MD-to-QM Computational Chemistry Workflow Engine (Open-Source Core)**
 
@@ -10,7 +10,9 @@ It forms the open-source scientific core alongside two ecosystem tools:
 
 ---
 
-## Key Capabilities (`v2.0.0` Universal Modular Engine)
+## Key Capabilities (`v2.0.1` Universal Modular Engine)
+
+- **Automatic `.edr` $\to$ `.xvg` Self-Healing Sync (`--sync-edr` & `scripts/sync_xvg_from_edr.py`)**: Automatically creates or updates missing/incomplete/stale `analysis/thermo.xvg` and `analysis/stress.xvg` from `prod.edr` via `panedr` (pure Python) or native `gmx energy` before the Gatekeeper and analyzers run.
 
 - **Modular Analysis Selector & Automated Physics Gatekeeper**: Choose from 9 named profiles (`standard`, `quick_qc`, `full_kbi_thermo`, `electrolyte_des`, `spectroscopy`, `interface_slab`, `conformation_free_energy`, `md_only_everything`, `everything`) or pass any custom `--analyses` checklist (`--list-analyses` exports the full JSON catalog). Every module validates physical and data prerequisites automatically (Nyquist $\Delta t$ guard, ionic-charge check, multi-composition check, slab check, multi-window `dhdl.xvg` check) and records an explicit `analysis_gatekeeper_report.csv`.
 - **General Triclinic PBC & Cromer–Mann WAXS/SAXS**: Exact orthorhombic and triclinic minimum-image geometry (rhombic dodecahedron / truncated octahedron) plus International Tables 9-parameter Cromer–Mann $q$-dependent X-ray atomic form factors $f_a(q)$.
