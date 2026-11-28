@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mody-analyse"
 version = "2.0.1"
-description = "Modular MD-KBI-Green-Kubo and MD-to-QM (GFN2-xTB / ORCA LED / Multiwfn NCI-IGMH) computational chemistry workflow engine."
+description = "Universal modular MD-KBI-Green-Kubo, NPT thermodynamics, Onsager electrochemistry, spectroscopy, FEP (TI/BAR/MBAR), and MD-to-QM (GFN2-xTB / ORCA LED / Multiwfn NCI-IGMH) computational chemistry engine."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "GPL-3.0-only" }
@@ -45,6 +45,11 @@ dev = [
 
 [project.scripts]
 mody-analyse = "mody_analyse.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/iehoshva/mody-analyse"
+Repository = "https://github.com/iehoshva/mody-analyse"
+Issues = "https://github.com/iehoshva/mody-analyse/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
